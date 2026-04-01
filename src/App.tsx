@@ -1,49 +1,38 @@
 import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { open } from "@tauri-apps/plugin-dialog";
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const [repoPath, setRepoPath] = useState<string | null>(null);
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+  async function selectRepo() {
+    const selected = await open({
+      directory: true,
+      title: "Select a Git Repository",
+    });
+    if (selected) {
+      setRepoPath(selected as string);
+    }
+  }
+
+  if (!repoPath) {
+    return (
+      <main className="flex flex-col items-center justify-center h-screen">
+        <h1 className="text-4xl font-bold mb-2">Panes</h1>
+        <p className="text-neutral-400 mb-6">Select a git repository to get started.</p>
+        <button
+          onClick={selectRepo}
+          className="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg font-medium transition-colors"
+        >
+          Open Repository
+        </button>
+      </main>
+    );
   }
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+    <main className="p-4 min-h-screen">
+      <h1 className="text-2xl font-bold">Panes</h1>
+      <p className="text-neutral-400 mt-2">Repo: {repoPath}</p>
     </main>
   );
 }
