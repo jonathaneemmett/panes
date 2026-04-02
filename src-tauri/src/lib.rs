@@ -1,10 +1,48 @@
 use std::process::Command;
 use serde::Serialize;
+use std::io::BufRead;
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter, State};
+use std::collections::HashMap;
 
 #[derive(Serialize)]
 pub struct Worktree {
     pub path: String,
     pub branch: String,
+}
+
+pub struct AgentState {
+    processes: Mutex<HashMap<String, std::process::Child>>,
+}
+
+#[tauri::command]
+fn spawn_agent(app: AppHandle, state: State<'_, AgentState>, worktree_path: String, prompt: String,) -> Result<String, String>{
+    let id = uuid::Uuid::new_v4().to_string();
+    let event_id = id.clone();
+
+    let mut child = Command::new("claude")
+        .args(["--output-format", "stream-json", "--verbose", "-p", &prompt])
+        .current_dir(&worktree_path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn agent: {}", e))?;
+
+    let stdout = child.stdout.take().unwrap();
+
+    state.processes.lock().unwrap().insert(id.clone(), child);
+
+    std::thread::spawn(move || {
+          let reader = std::io::BufReader::new(stdout);
+          for line in reader.lines() {
+              if let Ok(line) = line {
+                  let _ = app.emit(&format!("agent-output-{}", event_id), &line);
+              }
+          }
+          let _ = app.emit(&format!("agent-done-{}", event_id), ());
+      });
+
+    Ok(id)
 }
 
 #[tauri::command]
