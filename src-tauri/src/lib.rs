@@ -10,39 +10,38 @@ pub struct Worktree {
     pub path: String,
     pub branch: String,
 }
-
-pub struct AgentState {
-    processes: Mutex<HashMap<String, std::process::Child>>,
+#[derive(Serialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
 }
 
 #[tauri::command]
-fn spawn_agent(app: AppHandle, state: State<'_, AgentState>, worktree_path: String, prompt: String,) -> Result<String, String>{
-    let id = uuid::Uuid::new_v4().to_string();
-    let event_id = id.clone();
+fn read_directory(path: &str) -> Result<Vec<FileEntry>, String> {
+    let mut entries: Vec<FileEntry> = std::fs::read_dir(path)
+        .map_err(|e| format!("Failed to read directory: {}", e))?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.'){
+                return None
+            }
+            Some(FileEntry {
+                name, 
+                path: entry.path().to_string_lossy().to_string(),
+                is_dir: entry.file_type().ok()?.is_dir()
+            })
+        })
+        .collect();
 
-    let mut child = Command::new("claude")
-        .args(["--output-format", "stream-json", "--verbose", "-p", &prompt])
-        .current_dir(&worktree_path)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn agent: {}", e))?;
+        entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        });
 
-    let stdout = child.stdout.take().unwrap();
-
-    state.processes.lock().unwrap().insert(id.clone(), child);
-
-    std::thread::spawn(move || {
-          let reader = std::io::BufReader::new(stdout);
-          for line in reader.lines() {
-              if let Ok(line) = line {
-                  let _ = app.emit(&format!("agent-output-{}", event_id), &line);
-              }
-          }
-          let _ = app.emit(&format!("agent-done-{}", event_id), ());
-      });
-
-    Ok(id)
+        Ok(entries)
 }
 
 #[tauri::command]
@@ -123,6 +122,7 @@ pub fn run() {
             create_worktree,
             list_worktrees,
             remove_worktree,
+            read_directory
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
